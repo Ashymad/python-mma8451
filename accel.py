@@ -29,7 +29,7 @@ deviceName = 0x1a
 
 # Various addresses
 i2caddr = 0x1D
-#
+
 # Useful Register Address
 REG_STATUS = 0x00  # Read-Only
 REG_WHOAMI = 0x0d  # Read-Only
@@ -182,9 +182,11 @@ FLAG_XYZ_DATA_BIT_5 = 0x00  # 0 (Zero): Not Used
 FLAG_XYZ_DATA_BIT_HPF_OUT = 0x00  # High-Pass Filter (1: output data High-pass filtered, 0: output data High-pass NOT filtered)
 FLAG_XYZ_DATA_BIT_3 = 0x00  # 0 (Zero): Not Used
 FLAG_XYZ_DATA_BIT_2 = 0x00  # 0 (Zero): Not Used
-FLAG_XYZ_DATA_BIT_FS_2G = 0x00  # Full Scale Range 2g
-FLAG_XYZ_DATA_BIT_FS_4G = 0x01  # Full Scale Range 4g
-FLAG_XYZ_DATA_BIT_FS_8G = 0x02  # Full Scale Range 8g
+FLAG_XYZ_DATA_BIT_FS = {
+    RANGE_2_G: 0x00, # Full Scale Range 2g
+    RANGE_4_G: 0x01, # Full Scale Range 4g
+    RANGE_8_G: 0x02  # Full Scale Range 8g
+}
 FLAG_XYZ_DATA_BIT_FS_RSVD = 0x03  # Reserved
 
 # Register F_SETUP (0x09) R/W - FIFO Setup Register
@@ -248,62 +250,42 @@ FLAG_TRANSIENT_SCR_XTRANSE = 0x02  # X transient event (0: no interrupt, 1: X Tr
 FLAG_TRANSIENT_SCR_XTR_POL = 0x01  # Polarity of X Transient Event that triggered interrupt (0: X event Positive g, 1: X event Negative g)
 
 class Accel():
-    raspiBus = -1               # The Raspberry Pi Bus (dpends on hardware model)
-    raspiInfo = ""              # Raspberry Pi Info
 
     def __init__(self):
 
         # Setup RPI specific bus
-        myBus = ""
         if GPIO.RPI_INFO['P1_REVISION'] == 1:
             myBus = 0
         else:
             myBus = 1
-        self.raspiBus = myBus
 
-        self.b = smbus.SMBus(myBus)  # 0 = /dev/i2c-0 (port I2C0), 1 = /dev/i2c-1 (port I2C1)
-        self.a = i2caddr
+        self.bus = smbus.SMBus(myBus)  # 0 = /dev/i2c-0 (port I2C0), 1 = /dev/i2c-1 (port I2C1)
+        self.addr = i2caddr
         self.high_res_mode = OVERSAMPLING_MODE
-        self.sensor_range = RANGE_4_G
+        self.sensor_range = RANGE_2_G
         self.raspiInfo = GPIO.RPI_INFO
 
-
     def whoAmI(self):
-        return self.b.read_byte_data(i2caddr, REG_WHOAMI)
+        return self.bus.read_byte_data(self.addr, REG_WHOAMI)
 
     def init(self):
-        # Preliminary actions
-        # sudo chmod 666 /sys/module/i2c_bcm2708/parameters/combined
-        # sudo echo -n 1 > /sys/module/i2c_bcm2708/parameters/combined
-        #
-        # the above 2 sh commands can be replaced with the following statements, in the case this program is ran as root (sudo)
-        # (For more information, please see: http://raspberrypi.znix.com/hipidocs/topic_i2c_rs_and_cs.htm)
-        #
-        # BCM2708_COMBINED_PARAM_PATH = '/sys/module/i2c_bcm2708/parameters/combined'
-        # os.chmod(BCM2708_COMBINED_PARAM_PATH, 666)
-        # os.system('echo -n 1 > {!s}'.format(BCM2708_COMBINED_PARAM_PATH))
-        # sudo i2cdetect -y 1               # this sh cmmand will search /dev/i2c-1 for all address
-        # sudo i2cget -y 1 0x1d 0x0d		# This sh command should return 0x1a for MMA8451
-        #
-        # Setup all registers appropriately
-        self.writeRegister(REG_CTRL_REG2, self.readRegister(REG_CTRL_REG2) | FLAG_RESET)  # Reset
-        # self.writeRegister(REG_CTRL_REG2,	 self.readRegister(REG_CTRL_REG2) | FLAG_STEST)						# SelfTest
-        self.writeRegister(REG_CTRL_REG1, self.readRegister(REG_CTRL_REG1) & ~FLAG_ACTIVE)  # Put the device in Standby
-        self.writeRegister(REG_CTRL_REG1, self.readRegister(REG_CTRL_REG1) & ~FLAG_F_READ)  # No Fast-Read (14-bits), Fast-Read (8-Bits)
-        self.writeRegister(REG_CTRL_REG1, self.readRegister(REG_CTRL_REG1) | FLAG_ODR_50_HZ)  # Data Rate
-        self.writeRegister(REG_XYZ_DATA_CFG, self.readRegister(REG_XYZ_DATA_CFG) | FLAG_XYZ_DATA_BIT_FS_4G)  # Full Scale Range 2g, 4g or 8g
-        self.writeRegister(REG_CTRL_REG1, self.readRegister(REG_CTRL_REG1) | FLAG_LNOISE)  # Low Noise
-        self.writeRegister(REG_CTRL_REG2, self.readRegister(REG_CTRL_REG2) & ~FLAG_SLPE)  # No Auto-Sleep
-        self.writeRegister(REG_CTRL_REG2, self.readRegister(REG_CTRL_REG2) | FLAG_SMODS_HR)  # High Resolution
-        self.writeRegister(REG_PL_CFG, self.readRegister(REG_PL_CFG) | FLAG_PL_CFG_PL_EN)  # P/L Detection Enabled
-
-        # Finally, Activate the sensor
-        self.writeRegister(REG_CTRL_REG1, self.readRegister(REG_CTRL_REG1) | FLAG_ACTIVE)  # Activate the device
+        # Setup all registers
+        self.writeRegister(REG_CTRL_REG2,   self.readRegister(REG_CTRL_REG2)    | FLAG_RESET)               # Reset
+        # self.writeRegister(REG_CTRL_REG2, self.readRegister(REG_CTRL_REG2)    | FLAG_STEST)               # SelfTest
+        self.writeRegister(REG_CTRL_REG1,   self.readRegister(REG_CTRL_REG1)    & ~FLAG_ACTIVE)             # Put the device in Standby
+        self.writeRegister(REG_CTRL_REG1,   self.readRegister(REG_CTRL_REG1)    & ~FLAG_F_READ)             # No Fast-Read (14-bits), Fast-Read (8-Bits)
+        self.writeRegister(REG_CTRL_REG1,   self.readRegister(REG_CTRL_REG1)    | FLAG_ODR_50_HZ)           # Data Rate
+        self.writeRegister(REG_XYZ_DATA_CFG,self.readRegister(REG_XYZ_DATA_CFG) | FLAG_XYZ_DATA_BIT_FS[self.sensor_range]) # Full Scale Range 2g, 4g or 8g
+        self.writeRegister(REG_CTRL_REG1,   self.readRegister(REG_CTRL_REG1)    | FLAG_LNOISE)              # Low Noise
+        self.writeRegister(REG_CTRL_REG2,   self.readRegister(REG_CTRL_REG2)    & ~FLAG_SLPE)               # No Auto-Sleep
+        self.writeRegister(REG_CTRL_REG2,   self.readRegister(REG_CTRL_REG2)    | FLAG_SMODS_HR)            # High Resolution
+        self.writeRegister(REG_PL_CFG,      self.readRegister(REG_PL_CFG)       | FLAG_PL_CFG_PL_EN)        # P/L Detection Enabled
+        self.writeRegister(REG_CTRL_REG1,   self.readRegister(REG_CTRL_REG1)    | FLAG_ACTIVE)              # Activate the device
 
     def writeRegister(self, regNumber, regData):
         # Writes one byte (8-bts) of data passed in 'regData', into the register 'regNumber'
         try:
-            self.b.write_byte_data(self.a, regNumber, regData)
+            self.bus.write_byte_data(self.addr, regNumber, regData)
             time.sleep(0.01)
         except IOError:
             print("Error detected in function writeRegister() [IOError = " + str(IOError) + "]")
@@ -312,7 +294,7 @@ class Accel():
     def readRegister(self, regNumber):
         #Retrieves one byte (8-bits) of data from register 'regNumber' returning to the caller
         try:
-            return self.b.read_byte_data(self.a, regNumber)
+            return self.bus.read_byte_data(self.addr, regNumber)
         except IOError:
             print("Error detected in function readRegister() [IOError = " + str(IOError) + "]")
             sys.exit()
@@ -321,7 +303,7 @@ class Accel():
         #Performs a burst-read on the device registers retrieving the requested amount of data
         #Read a block of <length> bytes from  offset <offset>
         try:
-            return self.b.read_i2c_block_data(i2caddr, offset, length)
+            return self.bus.read_i2c_block_data(self.addr, offset, length)
         except IOError:
             print("Error detected in function block_read() [IOError = " + str(IOError) + "]")
             sys.exit()
@@ -329,20 +311,18 @@ class Accel():
     def get_orientation(self):
         #Get current orientation of the sensor.
         #:return: orientation. Orientation number for the sensor.
-        orientation = self.b.read_byte_data(self.a, REG_PL_STATUS) & 0x7
+        orientation = self.bus.read_byte_data(self.addr, REG_PL_STATUS) & 0x7
         return orientation
 
     def getAxisValue(self):
         #Retrieves axis values and converts into a readable format (i.e. m/s2)
-        #:return:	None
 
         # Make sure F_READ and F_MODE are disabled.
-        f_read = self.b.read_byte_data(self.a, REG_CTRL_REG1) & FLAG_F_READ
+        f_read = self.bus.read_byte_data(self.addr, REG_CTRL_REG1) & FLAG_F_READ
         assert f_read == 0, 'F_READ mode is not disabled. : %s' % (f_read)
-        f_mode = self.b.read_byte_data(self.a, REG_F_SETUP) & FLAG_F_MODE_FIFO_TRIGGER
+        f_mode = self.bus.read_byte_data(self.addr, REG_F_SETUP) & FLAG_F_MODE_FIFO_TRIGGER
         assert f_mode == 0, 'F_MODE mode is not disabled. : %s' % (f_mode)
 
-        #
         self.xyzdata = self.block_read(REG_OUT_X_MSB, 6)
         if self.high_res_mode is not None:
             x = ((self.xyzdata[0] << 8) | self.xyzdata[1]) >> 2
@@ -356,18 +336,13 @@ class Accel():
             precision = PRECISION_08_BIT  # Precision 08 bit data
         max_val = 2 ** (precision - 1) - 1
         signed_max = 2 ** precision
-        #
+
         x -= signed_max if x > max_val else 0
         y -= signed_max if y > max_val else 0
         z -= signed_max if z > max_val else 0
-        #
-        x = round((float(x)) / RANGE_DIVIDER[self.sensor_range], 3)
-        y = round((float(y)) / RANGE_DIVIDER[self.sensor_range], 3)
-        z = round((float(z)) / RANGE_DIVIDER[self.sensor_range], 3)
+
+        x = float(x) / RANGE_DIVIDER[self.sensor_range]
+        y = float(y) / RANGE_DIVIDER[self.sensor_range]
+        z = float(z) / RANGE_DIVIDER[self.sensor_range]
 
         return {"x": x, "y": y, "z": z}
-
-    def debugShowAxisAcceleration(self, xaccel, yaccel, zaccel):
-        print("   x (m/s2)= %+.3f" % (xaccel))
-        print("   y (m/s2)= %+.3f" % (yaccel))
-        print("   z (m/s2)= %+.3f" % (zaccel))
