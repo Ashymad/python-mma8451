@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # -*- coding:utf-8, indent=tab, tabstop=4 -*-
 # See 'LICENSE'  for copying
 
