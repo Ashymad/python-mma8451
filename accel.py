@@ -4,7 +4,6 @@
 
 import smbus
 import time
-import datetime
 import RPi.GPIO as GPIO
 
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -372,22 +371,3 @@ class Accel():
         print("   x (m/s2)= %+.3f" % (xaccel))
         print("   y (m/s2)= %+.3f" % (yaccel))
         print("   z (m/s2)= %+.3f" % (zaccel))
-
-if __name__ == "__main__":
-
-    MMA8451 = Accel()
-    MMA8451.init()
-
-    if MMA8451.whoAmI() != deviceName:
-        print("Error! Device not recognized! (" + str(deviceName) + ")")
-        sys.exit()
-
-    while True:  # forever loop
-        print ("\nCurrent Date-Time: " + str(datetime.datetime.now()))
-        axes = MMA8451.getAxisValue()
-        MMA8451.debugShowAxisAcceleration(axes['x'], axes['y'], axes['z'])
-
-        time.sleep(0.5)
-
-    sys.exit()
-
