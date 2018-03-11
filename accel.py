@@ -1,41 +1,11 @@
 #!/usr/bin/env python
 # -*- coding:utf-8, indent=tab, tabstop=4 -*-
-#
 # See 'LICENSE'  for copying
-#
-# Revision history
-# Date			Author					Version		Details
-# ----------------------------------------------------------------------------------
-# 2016-12-31	Massimo Di Primio		V.0.04		Fixed some basic functionality
-#
-# 2017-01-03	Massimo Di Primio		0.05		Added Interrut handler
-#
-# 2018-01-10    Massimo Di Primio       0.06        Added config file parser
-
-"""Simple code example for Adafruit MMA8452 3-axis Accelerometer
-
-This experimental code is intended for measuring gravity acceleration trough Adafruit(c) MMA8451, connected
-to a Raspberry Pi Model 2A, 2B, 2B+ or 3 (not yet tested with RPi Zero).
-Through this code we will demonstrate the ability of the 3-axis sensor MMA8451 to efficiently measure
-gravity acceleration, so that we can identify the spatial orientation of the device.
-Further and even more useful application can start from this minimal basic code.
-"""
 
 import smbus
 import time
 import datetime
 import RPi.GPIO as GPIO
-
-__author__ = "Massimo Di Primio"
-__copyright__ = "Copyright 2016, dpmiictc"
-__credits__ = ["Massimo Di Primio", "Dario Dalla Libera"]
-__license__ = "GNU GENERAL PUBLIC LICENSE Version 3"
-__version__ = "0.0.1"
-__deprecated__ = "None so far"
-__date__ = "2017-01-03"
-__maintainer__ = "Massimo Di Primio"
-__email__ = "massimo@diprimio.com"
-__status__ = "Testing"
 
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 # Application Definition Constants (ADC)
@@ -278,29 +248,18 @@ FLAG_TRANSIENT_SCR_YTR_POL = 0x04  # Polarity of Y Transient Event that triggere
 FLAG_TRANSIENT_SCR_XTRANSE = 0x02  # X transient event (0: no interrupt, 1: X Transient acceleration > than TRANSIENT_THS event has occurred
 FLAG_TRANSIENT_SCR_XTR_POL = 0x01  # Polarity of X Transient Event that triggered interrupt (0: X event Positive g, 1: X event Negative g)
 
-# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-# Define SOME GLOBAL VARIABLES
-# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-
-# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-# Define a class called Accel
-# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 class Accel():
     raspiBus = -1               # The Raspberry Pi Bus (dpends on hardware model)
     raspiInfo = ""              # Raspberry Pi Info
 
     def __init__(self):
 
-        #
         # Setup RPI specific bus
-        #
         myBus = ""
         if GPIO.RPI_INFO['P1_REVISION'] == 1:
             myBus = 0
         else:
             myBus = 1
-        #print('myBus=' + str(myBus))
         self.raspiBus = myBus
 
         self.b = smbus.SMBus(myBus)  # 0 = /dev/i2c-0 (port I2C0), 1 = /dev/i2c-1 (port I2C1)
@@ -413,10 +372,6 @@ class Accel():
         print("   x (m/s2)= %+.3f" % (xaccel))
         print("   y (m/s2)= %+.3f" % (yaccel))
         print("   z (m/s2)= %+.3f" % (zaccel))
-
-#####################################################################################
-#   M A I N 
-#####################################################################################
 
 if __name__ == "__main__":
 
