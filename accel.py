@@ -24,13 +24,7 @@ Further and even more useful application can start from this minimal basic code.
 import smbus
 import time
 import datetime
-import os
-import sys
-import logging
-import threading
 import RPi.GPIO as GPIO
-import rss_cli_config as clicfg
-from collections import deque
 
 __author__ = "Massimo Di Primio"
 __copyright__ = "Copyright 2016, dpmiictc"
@@ -42,12 +36,6 @@ __date__ = "2017-01-03"
 __maintainer__ = "Massimo Di Primio"
 __email__ = "massimo@diprimio.com"
 __status__ = "Testing"
-# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-# User Configuration Options (UCO)
-# This section will be repaced soon by an external configuration file
-# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-CFG_INTERRUPT = 1
-# MMA8451_RANGE		= {}
 
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 # Application Definition Constants (ADC)
@@ -93,10 +81,10 @@ REG_CTRL_REG3 = 0x2C  # Read/Write
 REG_CTRL_REG4 = 0x2D  # Read/Write
 REG_CTRL_REG5 = 0x2E  # Read/Write
 
-REDUCED_NOISE_MODE = 0
+REDUCED_NOIDE_MODE = 0
 OVERSAMPLING_MODE = 1
 HIGH_RES_MODE = {
-    REDUCED_NOISE_MODE: [REG_CTRL_REG1, 0x4],
+    REDUCED_NOIDE_MODE: [REG_CTRL_REG1, 0x4],
     OVERSAMPLING_MODE: [REG_CTRL_REG2, 0x2],
 }
 
@@ -270,10 +258,10 @@ FLAG_PL_CFG_PL_EN = 0x40  # Portrait/Landscape Detection Enable (0: P/L Detectio
 # +--------------+--------------+--------------+--------------+--------------+--------------+--------------+--------------+
 # |      -       |      -       |      -       |     ELE      |   ZTEFE      |   YTEFE      |   XTEFE      |  HPF_BYP     |
 # +--------------+--------------+--------------+--------------+--------------+--------------+--------------+--------------+
-FLAG_TRANSIENT_CFG_ELE = 0x10      # Transient event flags (0: Event flag latch disabled; 1: Event flag latch enabled)
-FLAG_TRANSIENT_CFG_ZTEFE = 0x08    # Event flag enable on Z (0: Event detection disabled; 1: Raise event flag)
-FLAG_TRANSIENT_CFG_YTEFE = 0x04    # Event flag enable on Y (0: Event detection disabled; 1: Raise event flag)
-FLAG_TRANSIENT_CFG_XTEFE = 0x02    # Event flag enable on X (0: Event detection disabled; 1: Raise event flag)
+FLAG_TRANSIENT_CFG_ELE = 0x10  # Transient event flags (0: Event flag latch disabled; 1: Event flag latch enabled)
+FLAG_TRANSIENT_CFG_ZTEFE = 0x08  # Event flag enable on Z (0: Event detection disabled; 1: Raise event flag)
+FLAG_TRANSIENT_CFG_YTEFE = 0x04  # Event flag enable on Y (0: Event detection disabled; 1: Raise event flag)
+FLAG_TRANSIENT_CFG_XTEFE = 0x02  # Event flag enable on X (0: Event detection disabled; 1: Raise event flag)
 FLAG_TRANSIENT_CFG_HPF_BYP = 0x01  # Bypass High-Pass filter/Motion Detection
 
 # Register TRANSIENT_SCR (0x01e) R/O - TRANSIENT_SRC Register
@@ -282,7 +270,7 @@ FLAG_TRANSIENT_CFG_HPF_BYP = 0x01  # Bypass High-Pass filter/Motion Detection
 # +--------------+--------------+--------------+--------------+--------------+--------------+--------------+--------------+
 # |       -      |      EA      |   ZTRANSE    | Z_Trans_Pol  |   YTRANSE    | Y_Trans_Pol  |   XTRANSE    | X_Trans_Pol  |
 # +--------------+--------------+--------------+--------------+--------------+--------------+--------------+--------------+
-FLAG_TRANSIENT_SCR_EA = 0x40       # Event Active Flag (0: no event flag has been asserted; 1: one or more event flag has been asserted)
+FLAG_TRANSIENT_SCR_EA = 0x40  # Event Active Flag (0: no event flag has been asserted; 1: one or more event flag has been asserted)
 FLAG_TRANSIENT_SCR_ZTRANSE = 0x20  # Z transient event (0: no interrupt, 1: Z Transient acceleration > than TRANSIENT_THS event has occurred
 FLAG_TRANSIENT_SCR_ZTR_POL = 0x10  # Polarity of Z Transient Event that triggered interrupt (0: Z event Positive g, 1: Z event Negative g)
 FLAG_TRANSIENT_SCR_YTRANSE = 0x08  # Y transient event (0: no interrupt, 1: Y Transient acceleration > than TRANSIENT_THS event has occurred
@@ -290,69 +278,16 @@ FLAG_TRANSIENT_SCR_YTR_POL = 0x04  # Polarity of Y Transient Event that triggere
 FLAG_TRANSIENT_SCR_XTRANSE = 0x02  # X transient event (0: no interrupt, 1: X Transient acceleration > than TRANSIENT_THS event has occurred
 FLAG_TRANSIENT_SCR_XTR_POL = 0x01  # Polarity of X Transient Event that triggered interrupt (0: X event Positive g, 1: X event Negative g)
 
-# Register FF_MT_THS (0x017) R/W - Freefall and Motion Threshold Register
-# +--------------+--------------+--------------+--------------+--------------+--------------+--------------+--------------+
-# |   Bit 7      |   Bit 6      |  Bit 5       |  Bit 4       |   Bit 3      |  Bit 2       |  Bit 1       |  Bit 0       |
-# +--------------+--------------+--------------+--------------+--------------+--------------+--------------+--------------+
-# |   DBCNTM     |     THS6     |    THS5      |    THS4      |    THS3      |    THS2      |    THS1      |    THS0      |
-# +--------------+--------------+--------------+--------------+--------------+--------------+--------------+--------------+
-
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 # Define SOME GLOBAL VARIABLES
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-# Define the acceleration FIFO buffer
-# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-# The acceleration FIFO buffer is a list of records containing all meaningful acceleration data plus some
-# other useful information, whose format il as described below
-#
-#   1.  curTime     as returned by: datetime.datetime.now().  Format is: 'YYYY-MM-DD hh:mi:ss.uuuuuuu'
-#   2.  xAccel      Current X acceleration value in row format
-#   3.  yAccel      Current Y acceleration value in row format
-#   4.  xAccel      Current Z acceleration value in row format
-#   5.  plo         Current Portrait/Landscape orientation
-#accelBuffer = [0, 0, 0, 0, 0]
-accelBuffer = []
-#accelBuffer.append([0, 0, 0, 0, 0])
-
-# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-# Define the threaded interrupt vector
-# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-def my_callback(channel):
-    """
-    my_callback is the threaded callback functions for interrupt events.
-    These will run in another thread when our events are detected
-
-    :param channel: The GPIO channel where the interrupt event was risen
-    :return: None
-    """
-    # Please  nte that, for performance reasons, axis data are not convertd in m/s2,
-    # Although, all 6 registers containing acceleration data are read and formatted appropriately
-    bus = smbus.SMBus(1)
-    axisData = bus.read_i2c_block_data(i2caddr, REG_OUT_X_MSB, 6)
-    #
-    #print ("!"),  #print("Falling edge detected on GPIO channel: " + str(channel))
-    #
-    runTimeConfigObject.NumInterrupts = runTimeConfigObject.NumInterrupts + 1
-    #
-    xAccel = ((axisData[0] << 8) | axisData[1]) >> 2
-    yAccel = ((axisData[2] << 8) | axisData[3]) >> 2
-    zAccel = ((axisData[4] << 8) | axisData[5]) >> 2
-    plo = bus.read_byte_data(i2caddr, REG_PL_STATUS) & 0x7
-    # Append data to the accelBuffer
-    accelBuffer.append([str(datetime.datetime.now()), xAccel, yAccel, zAccel, plo])
-    pass
-
-
-# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 # Define a class called Accel
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-import ConfigParser
 class Accel():
     raspiBus = -1               # The Raspberry Pi Bus (dpends on hardware model)
-    raspiIntEnabled = 0         # 0 = Interrupt routine was not enabled after initialization, 1 = Interrupt routine enabled successfully
     raspiInfo = ""              # Raspberry Pi Info
 
     def __init__(self):
@@ -404,40 +339,11 @@ class Accel():
         self.writeRegister(REG_CTRL_REG2, self.readRegister(REG_CTRL_REG2) | FLAG_SMODS_HR)  # High Resolution
         self.writeRegister(REG_PL_CFG, self.readRegister(REG_PL_CFG) | FLAG_PL_CFG_PL_EN)  # P/L Detection Enabled
 
-        # Setup interrupts
-        if CFG_INTERRUPT == 1:
-            GPIO.setmode(GPIO.BCM)
-            # GPIO 23 & 17 set up as inputs, pulled up to avoid false detection.
-            # Both ports are wired to connect to GND on button press.
-            # So we'll be setting up falling edge detection for both
-            GPIO.setup(17, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-            # when a falling edge is detected on port 17, regardless of whatever
-            # else is happening in the program, the function my_callback will be run
-            # GPIO.add_event_detect(17, GPIO.FALLING, callback=my_callback, bouncetime=300)
-            GPIO.add_event_detect(17, GPIO.FALLING, callback=my_callback)
-            #print("Interrupt OK")
-            self.raspiIntEnabled = 1    # Interrupt enabled successfully
-            # Force 1st sensor read
-            my_callback(0)
-
-
-            # Configure register for interrupt
-            self.writeRegister(REG_CTRL_REG4, 0x00)  # Reset all interrupt enabled flags
-            self.writeRegister(REG_CTRL_REG4, self.readRegister(REG_CTRL_REG4) | FLAG_INT_EN_DRDY)  # Data Ready Interrupt Enabled
-            self.writeRegister(REG_CTRL_REG5, 0x00)  # Reset all interrupt config flags
-            self.writeRegister(REG_CTRL_REG5, self.readRegister(REG_CTRL_REG5) | FLAG_INT_CFG_DRDY)  # Data Ready Interrupt is routed to INT1 pin
-
-            # Initialize the accelBuffer
-            accelBuffer = deque()
-
-
         # Finally, Activate the sensor
         self.writeRegister(REG_CTRL_REG1, self.readRegister(REG_CTRL_REG1) | FLAG_ACTIVE)  # Activate the device
 
     def writeRegister(self, regNumber, regData):
-        """
-        Writes one byte (8-bts) of data passed in 'regData', into the register 'regNumber'
-        """
+        # Writes one byte (8-bts) of data passed in 'regData', into the register 'regNumber'
         try:
             self.b.write_byte_data(self.a, regNumber, regData)
             time.sleep(0.01)
@@ -446,9 +352,7 @@ class Accel():
             sys.exit()
 
     def readRegister(self, regNumber):
-        """
-        Retrieves one byte (8-bits) of data from register 'regNumber' returning to the caller
-        """
+        #Retrieves one byte (8-bits) of data from register 'regNumber' returning to the caller
         try:
             return self.b.read_byte_data(self.a, regNumber)
         except IOError:
@@ -456,10 +360,8 @@ class Accel():
             sys.exit()
 
     def block_read(self, offset, length):
-        """
-        Performs a burst-read on the device registers retrieving the requested amount of data
-        Read a block of <length> bytes from  offset <offset>
-        """
+        #Performs a burst-read on the device registers retrieving the requested amount of data
+        #Read a block of <length> bytes from  offset <offset>
         try:
             return self.b.read_i2c_block_data(i2caddr, offset, length)
         except IOError:
@@ -467,18 +369,15 @@ class Accel():
             sys.exit()
 
     def get_orientation(self):
-        """
-        Get current orientation of the sensor.
-        :return: orientation. Orientation number for the sensor.
-        """
+        #Get current orientation of the sensor.
+        #:return: orientation. Orientation number for the sensor.
         orientation = self.b.read_byte_data(self.a, REG_PL_STATUS) & 0x7
         return orientation
 
     def getAxisValue(self):
-        """
-        Retrieves axis values and converts into a readable format (i.e. m/s2)
-        :return:	None
-        """
+        #Retrieves axis values and converts into a readable format (i.e. m/s2)
+        #:return:	None
+
         # Make sure F_READ and F_MODE are disabled.
         f_read = self.b.read_byte_data(self.a, REG_CTRL_REG1) & FLAG_F_READ
         assert f_read == 0, 'F_READ mode is not disabled. : %s' % (f_read)
@@ -510,207 +409,30 @@ class Accel():
 
         return {"x": x, "y": y, "z": z}
 
-    def debugShowRpiInfo(self):
-        #print("Raspberry Info      = " + str(GPIO.RPI_INFO))
-        print("Raspberry Info      = " + str(self.raspiInfo))
-
-    def debugShowRegisters(self):
-        print("REG_STATUS       (0x00):" + str(format(self.readRegister(REG_STATUS), '#04x')) + " | Binary: " + format(self.readRegister(REG_STATUS), 'b').zfill(8))
-        print("REG_WHOAMI       (0x0d):" + str(format(self.readRegister(REG_WHOAMI), '#04x')) + " | Binary: " + format(self.readRegister(REG_WHOAMI), 'b').zfill(8))
-        print("REG_F_SETUP      (0x09):" + str(format(self.readRegister(REG_F_SETUP), '#04x')) + " | Binary: " + format(self.readRegister(REG_F_SETUP), 'b').zfill(8))
-        print("REG_XYZ_DATA_CFG (0x0e):" + str(format(self.readRegister(REG_XYZ_DATA_CFG), '#04x')) + " | Binary: " + format(self.readRegister(REG_XYZ_DATA_CFG), 'b').zfill(8))
-        print("REG_CTRL_REG1    (0x2a):" + str(format(self.readRegister(REG_CTRL_REG1), '#04x')) + " | Binary: " + format(self.readRegister(REG_CTRL_REG1), 'b').zfill(8))
-        print("REG_CTRL_REG2    (0x2b):" + str(format(self.readRegister(REG_CTRL_REG2), '#04x')) + " | Binary: " + format(self.readRegister(REG_CTRL_REG2), 'b').zfill(8))
-        print("REG_CTRL_REG3    (0x2c):" + str(format(self.readRegister(REG_CTRL_REG3), '#04x')) + " | Binary: " + format(self.readRegister(REG_CTRL_REG3), 'b').zfill(8))
-        print("REG_CTRL_REG4    (0x2d):" + str(format(self.readRegister(REG_CTRL_REG4), '#04x')) + " | Binary: " + format(self.readRegister(REG_CTRL_REG4), 'b').zfill(8))
-        print("REG_CTRL_REG5    (0x2e):" + str(format(self.readRegister(REG_CTRL_REG5), '#04x')) + " | Binary: " + format(self.readRegister(REG_CTRL_REG5), 'b').zfill(8))
-        print("REG_PL_STATUS    (0x10):" + str(format(self.readRegister(REG_PL_STATUS), '#04x')) + " | Binary: " + format(self.readRegister(REG_PL_STATUS), 'b').zfill(8))
-        print ("debugRealTime    " + str(runTimeConfigObject.debugRealTime))
-        print ("NumInterrupts    " + str(runTimeConfigObject.NumInterrupts))
-
-    def debugShowOrientation(self):
-        print("Position = %d" % (self.get_orientation()))
-
     def debugShowAxisAcceleration(self, xaccel, yaccel, zaccel):
         print("   x (m/s2)= %+.3f" % (xaccel))
         print("   y (m/s2)= %+.3f" % (yaccel))
         print("   z (m/s2)= %+.3f" % (zaccel))
-
-    def debugRealTimeBuffer(self):
-        n = 0
-        for elements in accelBuffer:
-            myData = accelBuffer.pop()
-            n += 1
-            print ("N=" + str(n) + " myData=" + str(myData))    # + "Element=" + str(elements))
-        try:
-            print("End of printout\n")
-            #time.sleep(1.0)
-        # os.system("clear")
-        except KeyboardInterrupt:
-            print("Program Termination Requested")
-            sys.exit()
-        
-###############################################################################
-#   Threading functions
-###############################################################################
-#def rssClient():
-#    """Manage data shipping over th network, in a separate thread."""
-#    #logger.debug('Thread Starting')
-#    while True:
-#        time.sleep(1.0)
-#        print ("This is thread rssClient()")
-#
-###############################################################################
-#   Useful functions
-###############################################################################
-def printHelp():
-    print ("\n")
-    print ("usage: accel.py [options]")
-    print ("Available options:")
-    print (" -h \t\t Print this help and exit")
-    print (" -d \t\t Show debug realtime interrupt data")
-    print (" -s \t\t Execute silently (no screen output)")
-    print (" -L <lvl>\t Set Log level. where <lvl> is the log level (0 = NONE - 8 = DEBUG)") 
-    print ("")
-
-
-def main(argv):
-    import sys, getopt, logging
-    #
-    try:
-        opts, args = getopt.getopt(argv,"hdsL:")
-    except getopt.GetoptError:
-        print ("\nInvalid option requested on command line")
-        printHelp()
-        sys.exit(2)
-
-    for opt, arg in opts:
-        if opt == '-h':
-            printHelp()
-            sys.exit()
-        elif opt == '-d':
-            runTimeConfigObject.debugRealTime = 1
-        elif opt == '-s':
-            runTimeConfigObject.executeSilently = 1
-        elif opt == '-L':
-            if (int(arg) == 0) or (int(arg) > 5):
-                pass
-                #logger.setLevel(logger.NOTSET)            # Same as value 0
-            elif int(arg) == 1:
-                logger.setLevel(logging.CRITICAL)          # Same as value 50
-            elif int(arg) == 2:
-                logger.setLevel(logging.ERROR)             # Same as value 40
-            elif int(arg) == 3:
-                logger.setLevel(logging.WARNING)           # Same as value 30
-            elif int(arg) == 4:
-                logger.setLevel(logging.INFO)              # Same as value 20
-            elif int(arg) == 5:
-                logger.setLevel(logging.DEBUG)             # Same as value 10
-
 
 #####################################################################################
 #   M A I N 
 #####################################################################################
 
 if __name__ == "__main__":
-    class runTimeConfigObject(object):
-        pass
-
-    #
-    # Setup Logger
-    #
-    #logger = logging.basicConfig(level=logging.DEBUG, format='[%(asctime)15s].%(levelname)s] (%(threadName)-10s) %(message)s', )
-    #logger.basicConfig(level=logging.DEBUG,format='[%(asctime)15s].%(levelname)s] (%(threadName)-10s) %(message)s',)
-    logger = logging.getLogger()
-    logger.setLevel(logging.DEBUG)
-    # create console handler and set level to debug
-    ch = logging.StreamHandler()
-    ch.setLevel(logging.DEBUG)
-    # create formatter
-    formatter = logging.Formatter('[%(asctime)s.%(levelname)s] (%(name)s.%(threadName)-10s) : %(message)s')
-    # add formatter to ch
-    ch.setFormatter(formatter)
-    # add ch to logger
-    logger.addHandler(ch)
-
-    #
-    # Set some default command line options
-    #
-    runTimeConfig = runTimeConfigObject()
-    runTimeConfigObject.debugRealTime = 0       # 1 = Show debug realtime interrupt data
-    runTimeConfigObject.executeSilently = 0     # 1 = Execute silently (no sceen output)
-    runTimeConfigObject.NumInterrupts = 0       # keep Nbr of sensor interrupts withi the main loop
-    
-    main(sys.argv[1:])
-
-    #
-    # Read configuration file
-    #
-    configFile = "./rss_config.dat"
-    logger.debug('Reading Config file: ' + configFile)
-    sections = {'GeoData', 'DeviceInfo', 'Networking'}
-    #configParameters = {}
-    #Config = ConfigParser.ConfigParser()
-    #Config.read(configFile)
-    #for section in sections:
-    #    try:
-    #        options = Config.options(section)
-    #    except:
-    #        print ("ERROR: Section '" + section + "' Not found in config file: '" + configFile + "'.")
-    #        sys.exit()
-    #    for option in options:
-    #        try:
-    #            configParameters[option] = Config.get(section, option)
-    #        except:
-    #            configParameters[option] = None
-    #        logger.debug("Config Section: " + section + " / Option: " + option + " => " + configParameters[option])
 
     MMA8451 = Accel()
-    #os.system("clear")
     MMA8451.init()
 
     if MMA8451.whoAmI() != deviceName:
         print("Error! Device not recognized! (" + str(deviceName) + ")")
         sys.exit()
 
-    #
-    # Thread client start
-    #
-    import rss_client
-    pill2kill = threading.Event()
-    #threadClient = threading.Thread(name='netClientWorker', target=rss_client.cli_worker, args=(pill2kill, configParameters, accelBuffer))
-    threadClient = threading.Thread(name='netClientWorker', target=rss_client.cli_worker, args=(pill2kill, accelBuffer))
-    threadClient.setDaemon(False)         #threadClient.daemon = False
-    threadClient.start()
-    myThread = []
-    myThread.append('netClientWorker')
-
     while True:  # forever loop
-        if runTimeConfigObject.executeSilently == 0:
-            print ("\nCurrent Date-Time: " + str(datetime.datetime.now()))
-            print ("Raspberry Bus       = " + str(MMA8451.raspiBus))
-            print ("Raspberry Interrupt = " + str(MMA8451.raspiIntEnabled))
-            print ("Number of elemets   = " + str(len(accelBuffer)))
-            MMA8451.debugShowRpiInfo()
-            MMA8451.debugShowRegisters()
-            MMA8451.debugShowOrientation()
-            axes = MMA8451.getAxisValue()
-            MMA8451.debugShowAxisAcceleration(axes['x'], axes['y'], axes['z'])
-            #
-            if runTimeConfigObject.debugRealTime != 0:
-                MMA8451.debugRealTimeBuffer()
+        print ("\nCurrent Date-Time: " + str(datetime.datetime.now()))
+        axes = MMA8451.getAxisValue()
+        MMA8451.debugShowAxisAcceleration(axes['x'], axes['y'], axes['z'])
 
-        runTimeConfigObject.NumInterrupts = 0
-        try:
-            time.sleep(1.0)
-        except KeyboardInterrupt:
-            logger.debug ("Killing threads...")
-            pill2kill.set()
-            threadClient.join()
-            time.sleep(1.0)
-
-            logger.debug("\nUser termination requested!\n")
-            sys.exit()
+        time.sleep(0.5)
 
     sys.exit()
 
