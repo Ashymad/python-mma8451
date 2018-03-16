@@ -274,12 +274,13 @@ class Accel():
         # self.writeRegister(REG_CTRL_REG2, self.readRegister(REG_CTRL_REG2)    | FLAG_STEST)               # SelfTest
         self.writeRegister(REG_CTRL_REG1,   self.readRegister(REG_CTRL_REG1)    & ~FLAG_ACTIVE)             # Put the device in Standby
         self.writeRegister(REG_CTRL_REG1,   self.readRegister(REG_CTRL_REG1)    & ~FLAG_F_READ)             # No Fast-Read (14-bits), Fast-Read (8-Bits)
-        self.writeRegister(REG_CTRL_REG1,   self.readRegister(REG_CTRL_REG1)    | FLAG_ODR_50_HZ)           # Data Rate
+        self.writeRegister(REG_CTRL_REG1,   self.readRegister(REG_CTRL_REG1)    | FLAG_ODR_800_HZ)          # Data Rate
         self.writeRegister(REG_XYZ_DATA_CFG,self.readRegister(REG_XYZ_DATA_CFG) | FLAG_XYZ_DATA_BIT_FS[self.sensor_range]) # Full Scale Range 2g, 4g or 8g
         self.writeRegister(REG_CTRL_REG1,   self.readRegister(REG_CTRL_REG1)    | FLAG_LNOISE)              # Low Noise
         self.writeRegister(REG_CTRL_REG2,   self.readRegister(REG_CTRL_REG2)    & ~FLAG_SLPE)               # No Auto-Sleep
         self.writeRegister(REG_CTRL_REG2,   self.readRegister(REG_CTRL_REG2)    | FLAG_SMODS_HR)            # High Resolution
-        self.writeRegister(REG_PL_CFG,      self.readRegister(REG_PL_CFG)       | FLAG_PL_CFG_PL_EN)        # P/L Detection Enabled
+        self.writeRegister(REG_PL_CFG,      self.readRegister(REG_PL_CFG)       & ~FLAG_PL_CFG_PL_EN)       # P/L Detection Enabled
+        self.writeRegister(REG_F_SETUP,     self.readRegister(REG_F_SETUP)      | FLAG_F_MODE_FIFO_RECNT)   # ENable FIFO circular buffer
         self.writeRegister(REG_CTRL_REG1,   self.readRegister(REG_CTRL_REG1)    | FLAG_ACTIVE)              # Activate the device
 
     def writeRegister(self, regNumber, regData):
@@ -346,3 +347,22 @@ class Accel():
         z = float(z) / RANGE_DIVIDER[self.sensor_range]
 
         return {"x": x, "y": y, "z": z}
+
+    def getFifoValues(self):
+
+        self.xyzdata = self.block_read(REG_OUT_X_MSB, 14)
+        x1 = ((self.xyzdata[0] << 8) | self.xyzdata[1]) >> 2
+        x2 = ((self.xyzdata[6] << 8) | self.xyzdata[7]) >> 2
+        x3 = ((self.xyzdata[12] << 8) | self.xyzdata[13]) >> 2
+        max_val = 2 ** (PRECISION_14_BIT - 1) - 1
+        signed_max = 2 ** PRECISION_14_BIT
+
+        x1 -= signed_max if x1 > max_val else 0
+        x2 -= signed_max if x1 > max_val else 0
+        x3 -= signed_max if x1 > max_val else 0
+
+        x1 = float(x1) / RANGE_DIVIDER[self.sensor_range]
+        x2 = float(x2) / RANGE_DIVIDER[self.sensor_range]
+        x3 = float(x3) / RANGE_DIVIDER[self.sensor_range]
+
+        return [x1, x2, x3]
