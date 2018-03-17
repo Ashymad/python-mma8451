@@ -200,6 +200,15 @@ FLAG_F_MODE_FIFO_RECNT = 0x40  # FIFO contains the most recent samples when over
 FLAG_F_MODE_FIFO_STOP = 0x80  # FIFO stops accepting new samples when overflowed.
 FLAG_F_MODE_FIFO_TRIGGER = 0xc0  # FIFO Trigger mode
 
+# Register F_STATUS (0x00) R - FIFO Status Register
+# +--------------+--------------+--------------+--------------+--------------+--------------+--------------+--------------+
+# |   Bit 7      |   Bit 6      |  Bit 5       |  Bit 4       |   Bit 3      |  Bit 2       |  Bit 1       |  Bit 0       |
+# +--------------+--------------+--------------+--------------+--------------+--------------+--------------+--------------+
+# |  F_OVF       |  F_WMRK_FLAG |  F_CNT5      |  F_CNT4      |  F_CNT3      | F_CNT2       |  F_CNT1      |  F_CNT0      |
+# +--------------+--------------+--------------+--------------+--------------+--------------+--------------+--------------+
+FLAG_F_OVF          = 0x80
+FLAG_F_WMRK_FLAG    = 0x40
+
 # Register PL_STATUS (0x010) R/O - Portrait/Landscape Status Register
 # +--------------+--------------+--------------+--------------+--------------+--------------+--------------+--------------+
 # |   Bit 7      |   Bit 6      |  Bit 5       |  Bit 4       |   Bit 3      |  Bit 2       |  Bit 1       |  Bit 0       |
@@ -248,6 +257,14 @@ FLAG_TRANSIENT_SCR_YTRANSE = 0x08  # Y transient event (0: no interrupt, 1: Y Tr
 FLAG_TRANSIENT_SCR_YTR_POL = 0x04  # Polarity of Y Transient Event that triggered interrupt (0: Y event Positive g, 1: Y event Negative g)
 FLAG_TRANSIENT_SCR_XTRANSE = 0x02  # X transient event (0: no interrupt, 1: X Transient acceleration > than TRANSIENT_THS event has occurred
 FLAG_TRANSIENT_SCR_XTR_POL = 0x01  # Polarity of X Transient Event that triggered interrupt (0: X event Positive g, 1: X event Negative g)
+
+def int1_callback(channel):
+    print("Interrupt detected")
+    bus = smbus.SMBus(1)
+    status = bus.read_byte_data(i2caddr, REG_STATUS)
+    print("F_OVF: " + str((status & FLAG_F_OVF) != 0))
+    print("F_WMRK_FLAG: " + str((status & FLAG_F_WMRK_FLAG) != 0))
+    print("F_CNT: " + str(status & ~0xc0))
 
 class Accel():
 
@@ -315,6 +332,49 @@ class Accel():
         orientation = self.bus.read_byte_data(self.addr, REG_PL_STATUS) & 0x7
         return orientation
 
+    def set_flag(self, reg, flag):
+        self.writeRegister(reg, self.readRegister(reg) | flag)
+
+    def unset_flag(self, reg, flag):
+        self.writeRegister(reg, self.readRegister(reg) & ~flag)
+
+    def read_flag(self, reg, flag):
+        return (self.readRegister(reg) & flag) != 0
+
+    def init_callback(self):
+        # Reset
+        self.set_flag(REG_CTRL_REG2, FLAG_RESET)
+        # Put the device in Standby
+        self.unset_flag(REG_CTRL_REG1, FLAG_ACTIVE)
+        # No Fast-Read (14-bits), Fast-Read (8-Bits)
+        self.unset_flag(REG_CTRL_REG1, FLAG_F_READ)
+        # Data Rate
+        self.set_flag(REG_CTRL_REG1, FLAG_ODR_800_HZ)
+        # Full Scale Range 2g, 4g or 8g
+        self.set_flag(REG_XYZ_DATA_CFG, FLAG_XYZ_DATA_BIT_FS[self.sensor_range])
+        # Low Noise
+        self.set_flag(REG_CTRL_REG1, FLAG_LNOISE)
+        # No Auto-Sleep
+        self.unset_flag(REG_CTRL_REG2, FLAG_SLPE)
+        # High Resolution
+        self.set_flag(REG_CTRL_REG2, FLAG_SMODS_HR)
+        # P/L Detection Disabled
+        self.unset_flag(REG_PL_CFG, FLAG_PL_CFG_PL_EN)
+        # Enable FIFO stop mode
+        self.set_flag(REG_F_SETUP, FLAG_F_MODE_FIFO_STOP)
+        # Set watermark to 16 samples
+        self.set_flag(REG_F_SETUP, 0x10)
+        # Enable FIFO interrupt signal
+        self.set_flag(REG_CTRL_REG4, FLAG_INT_EN_FIFO)
+        # Route interrupt to pin 1
+        self.set_flag(REG_CTRL_REG5, FLAG_INT_CFG_FIFO)
+        # Setup GPIO callback
+        GPIO.setmode(GPIO.BOARD)
+        GPIO.setup(17, GPIO.IN)
+        GPIO.add_event_detect(17, GPIO.RISING, callback=int1_callback)
+        # Activate the device
+        self.set_flag(REG_CTRL_REG1, FLAG_ACTIVE)
+    
     def getAxisValue(self):
         #Retrieves axis values and converts into a readable format (i.e. m/s2)
 
@@ -366,3 +426,7 @@ class Accel():
         x3 = float(x3) / RANGE_DIVIDER[self.sensor_range]
 
         return [x1, x2, x3]
+
+    def cleanup(self):
+        GPIO.cleanup()
+        self.unset_flag(REG_CTRL_REG1, FLAG_ACTIVE)
