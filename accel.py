@@ -370,8 +370,8 @@ class Accel():
         self.set_flag(REG_CTRL_REG5, FLAG_INT_CFG_FIFO)
         # Setup GPIO callback
         GPIO.setmode(GPIO.BOARD)
-        GPIO.setup(17, GPIO.IN)
-        GPIO.add_event_detect(17, GPIO.RISING, callback=int1_callback)
+        GPIO.setup(11, GPIO.IN)
+        GPIO.add_event_detect(11, GPIO.FALLING, callback=int1_callback)
         # Activate the device
         self.set_flag(REG_CTRL_REG1, FLAG_ACTIVE)
     
