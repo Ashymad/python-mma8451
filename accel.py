@@ -3,8 +3,8 @@
 
 from scipy.constants import g
 import RPi.GPIO as GPIO
-from register import register as REG
-from iic import IIC
+from mma8451.register import register as REG
+from mma8451.iic import IIC
 
 device_name = 0x1A
 iic_addr    = 0x1D
@@ -13,8 +13,9 @@ def int1_callback(channel):
     print("Interrupt detected")
     iic = IIC(1)
     status = iic.read_register(REG.F_STATUS)
-    print("F_OVF: " + str(iic.check_flag(status, REG.F_STATUS.F_OVF))
-    print("F_WMRK_FLAG: " + str(iic.check_flag(status, REG.F_STATUS.F_WMRK_FLAG))
+    print("F_OVF: " + str(iic.check_flag(status, REG.F_STATUS.F_OVF)))
+    print("F_WMRK_FLAG: " + str(iic.check_flag(status,
+                                               REG.F_STATUS.F_WMRK_FLAG)))
     print("F_CNT: " + str(status & REG.F_STATUS.F_CNT))
 
 class Accel():

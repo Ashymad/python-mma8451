@@ -1,5 +1,5 @@
-import register.addr as REG
-from register.classes import Flag
+import mma8451.register.addr as REG
+from mma8451.register.classes import Flag
 
 class STATUS(Flag):
     _addr           = REG.STATUS

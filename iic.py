@@ -1,5 +1,5 @@
 import smbus
-from register.classes import Register, Flag
+from mma8451.register.classes import Register, Flag
 
 class IIC():
     def __init__(self, busNumber : int, address : int):
