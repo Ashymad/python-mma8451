@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 # See 'LICENSE'  for copying
 
-import time
 from scipy.constants import g
 import RPi.GPIO as GPIO
 from register import register as REG
-from register.iic import IIC
+from iic import IIC
 
 device_name = 0x1A
 iic_addr    = 0x1D
@@ -25,7 +24,12 @@ class Accel():
         else:
             myBus = 1
 
-        self.iic = IIC(myBus)  # 0 = /dev/i2c-0 (port I2C0), 1 = /dev/i2c-1 (port I2C1)
+        self.iic = IIC(myBus, iic_addr)  # 0 = /dev/i2c-0 (port I2C0), 1 = /dev/i2c-1 (port I2C1)
+
+        whoami = self.iic.read_register(REG.WHO_AM_I)
+        if whoami != device_name:
+            raise NameError("Error! Device not recognized! (" + str(whoami) + ")")
+
 
     def init_callback(self):
         # Reset
@@ -62,6 +66,6 @@ class Accel():
         self.iic.set_flag(REG.CTRL_REG1.ACTIVE)
 
     def cleanup(self):
-        iic.close()
+        self.iic.close()
         GPIO.cleanup()
         self.unset_flag(REG.CTRL_REG1.ACTIVE)
