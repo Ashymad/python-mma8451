@@ -9,26 +9,38 @@ class IIC():
     def write_register(self, register : Register, data : int):
         self.bus.write_byte_data(self.addr, register._addr, data)
 
-    def read_register(self, register : Register):
+    def read_register(self, register : Register) -> int:
         return self.bus.read_byte_data(self.addr, register._addr)
 
-    def block_read(self, offset : Register, length : int):
+    def block_read(self, offset : Register, length : int) -> int:
         return self.bus.read_i2c_block_data(self.addr, offset._addr, length)
 
+    def _set_flag(self, register : int, flag : int):
+        self.writeregister(register, self.readregister(register) | flag)
+
+    def _unset_flag(self, register : int, flag : int):
+        self.writeregister(register, self.readregister(register) & ~flag)
+
     def set_flag(self, register : Register, flag : int):
-        self.writeRegister(register._addr, self.readRegister(register._addr) | flag)
+        self._set_flag(register._addr, flag)
 
     def unset_flag(self, register : Register, flag : int):
-        self.writeRegister(register._addr, self.readRegister(register._addr) & ~flag)
+        self._unset_flag(register._addr, flag)
 
     def set_flag(self, flag : Flag):
-        self.writeRegister(flag._addr, self.readRegister(flag._addr) | flag)
+        self._set_flag(flag._addr, flag)
 
     def unset_flag(self, flag : Flag):
-        self.writeRegister(flag._addr, self.readRegister(flag._addr) & ~flag)
+        self._unset_flag(flag._addr, flag)
 
-    def read_flag(self, flag : Flag):
-        return (self.readRegister(flag._addr) & flag) != 0
+    @staticmethod
+    def check_flag(bitfield : int, flag : int) -> bool:
+        if flag == 0:
+            raise ValueError("Flag does not have any bits set!")
+        return (bitfield & flag) != 0
+
+    def read_flag(self, flag : Flag) -> bool:
+        return self.check_flag(self.readRegister(flag._addr), flag)
     
     def close(self):
         self.bus.close()

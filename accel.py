@@ -13,8 +13,8 @@ def int1_callback(channel):
     print("Interrupt detected")
     iic = IIC(1)
     status = iic.read_register(REG.F_STATUS)
-    print("F_OVF: " + str((status & REG.F_STATUS.F_OVF) != 0))
-    print("F_WMRK_FLAG: " + str((status & REG.F_STATUS.F_WMRK_FLAG) != 0))
+    print("F_OVF: " + str(iic.check_flag(status, REG.F_STATUS.F_OVF))
+    print("F_WMRK_FLAG: " + str(iic.check_flag(status, REG.F_STATUS.F_WMRK_FLAG))
     print("F_CNT: " + str(status & REG.F_STATUS.F_CNT))
 
 class Accel():
