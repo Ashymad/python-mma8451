@@ -5,20 +5,13 @@ from scipy.constants import g
 import RPi.GPIO as GPIO
 from mma8451.register import register as REG
 from mma8451.iic import IIC
-import sys
+import time
 
 device_name = 0x1A
 iic_addr    = 0x1D
 
 def int1_callback(channel):
     print("Interrupt detected")
-    iic = IIC(1,iic_addr)
-    status = iic.read_register(REG.F_STATUS)
-    print("F_OVF: " + str(iic.check_flag(status, REG.F_STATUS.F_OVF)))
-    print("F_WMRK_FLAG: " + str(iic.check_flag(status,
-                                               REG.F_STATUS.F_WMRK_FLAG)))
-    print("F_CNT: " + str(status & REG.F_STATUS.F_CNT))
-    sys.exit() # crash
 
 class Accel():
     def __init__(self):
@@ -37,6 +30,7 @@ class Accel():
     def init_callback(self):
         # Reset
         self.iic.set_flag(REG.CTRL_REG2.RST)
+        time.sleep(0.01)
         # Put the device in Standby
         self.iic.unset_flag(REG.CTRL_REG1.ACTIVE)
         # No Fast-Read (14-bits), Fast-Read (8-Bits)
@@ -69,6 +63,6 @@ class Accel():
         self.iic.set_flag(REG.CTRL_REG1.ACTIVE)
 
     def cleanup(self):
-        self.iic.close()
-        GPIO.cleanup()
         self.iic.unset_flag(REG.CTRL_REG1.ACTIVE)
+        GPIO.cleanup()
+        self.iic.close()
