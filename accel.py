@@ -5,18 +5,20 @@ from scipy.constants import g
 import RPi.GPIO as GPIO
 from mma8451.register import register as REG
 from mma8451.iic import IIC
+import sys
 
 device_name = 0x1A
 iic_addr    = 0x1D
 
 def int1_callback(channel):
     print("Interrupt detected")
-    iic = IIC(1)
+    iic = IIC(1,iic_addr)
     status = iic.read_register(REG.F_STATUS)
     print("F_OVF: " + str(iic.check_flag(status, REG.F_STATUS.F_OVF)))
     print("F_WMRK_FLAG: " + str(iic.check_flag(status,
                                                REG.F_STATUS.F_WMRK_FLAG)))
     print("F_CNT: " + str(status & REG.F_STATUS.F_CNT))
+    sys.exit() # crash
 
 class Accel():
     def __init__(self):
@@ -48,7 +50,7 @@ class Accel():
         # No Auto-Sleep
         self.iic.unset_flag(REG.CTRL_REG2.SLPE)
         # High Resolution
-        self.iic.set_flag(CTRL_REG2.SMODS_HR)
+        self.iic.set_flag(REG.CTRL_REG2.SMODS_HR)
         # P/L Detection Disabled
         self.iic.unset_flag(REG.PL_CFG.PL_EN)
         # Enable FIFO fill mode
@@ -69,4 +71,4 @@ class Accel():
     def cleanup(self):
         self.iic.close()
         GPIO.cleanup()
-        self.unset_flag(REG.CTRL_REG1.ACTIVE)
+        self.iic.unset_flag(REG.CTRL_REG1.ACTIVE)

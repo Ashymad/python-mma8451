@@ -1,4 +1,5 @@
 import smbus
+import time
 from mma8451.register.classes import Register, Flag
 
 class IIC():
@@ -8,6 +9,7 @@ class IIC():
 
     def _write_register(self, register : int, data : int):
         self.bus.write_byte_data(self.addr, register, data)
+        time.sleep(0.01)
 
     def _read_register(self, register : int) -> int:
         return self.bus.read_byte_data(self.addr, register)
