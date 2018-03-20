@@ -25,15 +25,14 @@ class ThreadedDataReader(Thread):
 
     def run(self):
         global InterruptSF
-        while True:
-            InterruptSF.acquire(timeout=1)
-            if self.f_stop: break
-            status = self.iic.read_register(REG.F_STATUS)
-            if self.iic.check_flag(status, REG.F_STATUS.F_OVF):
-                print("Warning: FIFO buffer overflow!")
-                InterruptSF = Semaphore(4)
-            data = self.iic.block_read(REG.OUT_X_MSB, 30)
-            DataQueue.put(data)
+        while not self.f_stop:
+            if InterruptSF.acquire(timeout=1):
+                status = self.iic.read_register(REG.F_STATUS)
+                if self.iic.check_flag(status, REG.F_STATUS.F_OVF):
+                    print("Warning: FIFO buffer overflow!")
+                f_cnt = status & REG.F_STATUS.F_CNT
+                for i in range(0,f_cnt,5):
+                    DataQueue.put(self.iic.block_read(REG.OUT_X_MSB, 30))
 
     def stop(self):
         self.f_stop = True
@@ -75,7 +74,7 @@ class Accel():
         # Enable FIFO fill mode
         self.iic.set_flag(REG.F_SETUP.F_MODE_Fill)
         # Set watermark to 16 samples
-        self.iic.set_flag(REG.F_SETUP, 5)
+        self.iic.set_flag(REG.F_SETUP, 15)
         # Enable FIFO interrupt signal
         self.iic.set_flag(REG.CTRL_REG4.INT_EN_FIFO)
         # Route interrupt to pin 1
