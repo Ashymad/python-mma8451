@@ -18,20 +18,20 @@ def int1_callback(channel):
     InterruptSF.release()
 
 class ThreadedDataReader(Thread):
-    def __init__(self, iic = None, **kwargs):
-        self.iic = IIC(1, iic_addr) 
+    def __init__(self, iic, **kwargs):
+        self.iic = iic 
         self.f_stop = False
         super().__init__(**kwargs)
 
     def run(self):
+        global InterruptSF
         while True:
             InterruptSF.acquire(timeout=1)
             if self.f_stop: break
             status = self.iic.read_register(REG.F_STATUS)
             if self.iic.check_flag(status, REG.F_STATUS.F_OVF):
                 print("Warning: FIFO buffer overflow!")
-            #f_cnt = status & REG.F_STATUS.F_CNT
-            #if f_cnt > 5: f_cnt = 5
+                InterruptSF = Semaphore(4)
             data = self.iic.block_read(REG.OUT_X_MSB, 30)
             DataQueue.put(data)
 
@@ -93,6 +93,7 @@ class Accel():
 
     def cleanup(self):
         self.thr_dr.stop()
+        self.thr_dr.join()
         self.iic.unset_flag(REG.CTRL_REG1.ACTIVE)
         GPIO.cleanup()
         self.iic.close()
