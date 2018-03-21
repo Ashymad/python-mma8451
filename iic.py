@@ -1,19 +1,21 @@
-from smbus import SMBus
 from mma8451.register.classes import Register, Flag
 
 class IIC():
-    def __init__(self, busNumber : int, address : int):
-        self.bus = SMBus(busNumber)
-        self.addr = address
+    def __init__(self, pigpio_pi, iic_dev : int, iic_addr : int):
+        self.pi = pigpio_pi
+        self.iic = self.pi.i2c_open(iic_dev, iic_addr)
 
     def _write_register(self, register : int, data : int):
-        self.bus.write_byte_data(self.addr, register, data)
+        self.pi.i2c_write_byte_data(self.iic, register, data)
 
     def _read_register(self, register : int) -> int:
-        return self.bus.read_byte_data(self.addr, register)
+        return self.pi.i2c_read_byte_data(self.iic, register)
 
-    def _block_read(self, offset : int, length : int) -> int:
-        return self.bus.read_i2c_block_data(self.addr, offset, length)
+    def _block_read(self, register : int, length : int) -> int:
+        data_size, data = self.pi.i2c_read_i2c_block_data(self.iic, register, length)
+        if data_size < 0:
+            raise OSError('Error ' + str(data_size) + ': unable to read i2c block data')
+        return data
 
     def write_register(self, register : Register, data : int):
         self._write_register(register._addr, data)
@@ -48,4 +50,4 @@ class IIC():
         return self.check_flag(self.read_register(flag._addr), flag)
     
     def close(self):
-        self.bus.close()
+        self.pi.i2c_close(self.iic)

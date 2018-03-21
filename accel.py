@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # See 'LICENSE'  for copying
 
-import RPi.GPIO as GPIO
+import pigpio
 from mma8451.register import register as REG
 from mma8451.iic import IIC
 from threading import Thread, Semaphore
@@ -11,13 +11,10 @@ import time
 device_name = 0x1A
 iic_addr    = 0x1D
 
-InterruptSF = Semaphore(0)
-DataQueue = Queue()
-
-def int1_callback(channel):
-    InterruptSF.release()
 
 class ThreadedDataReader(Thread):
+    InterruptSF = Semaphore(0)
+
     def __init__(self, iic, **kwargs):
         self.iic = iic 
         self.f_stop = False
@@ -26,25 +23,30 @@ class ThreadedDataReader(Thread):
     def run(self):
         global InterruptSF
         while not self.f_stop:
-            if InterruptSF.acquire(timeout=1):
+            if ThreadedDataReader.InterruptSF.acquire(timeout=1):
                 status = self.iic.read_register(REG.F_STATUS)
                 if self.iic.check_flag(status, REG.F_STATUS.F_OVF):
                     print("Warning: FIFO buffer overflow!")
-                f_cnt = status & REG.F_STATUS.F_CNT
+                    f_cnt = 32
+                else:
+                    f_cnt = status & REG.F_STATUS.F_CNT
                 for i in range(0,f_cnt,5):
-                    DataQueue.put(self.iic.block_read(REG.OUT_X_MSB, 30))
+                    Accel.DataQueue.put(self.iic.block_read(REG.OUT_X_MSB, 30))
+                self.iic.read_register(REG.F_STATUS)
 
     def stop(self):
         self.f_stop = True
 
 class Accel():
-    def __init__(self):
-        if GPIO.RPI_INFO['P1_REVISION'] == 1:
-            myBus = 0
-        else:
-            myBus = 1
+    DataQueue = Queue()
 
-        self.iic = IIC(myBus, iic_addr)  # 0 = /dev/i2c-0 (port I2C0), 1 = /dev/i2c-1 (port I2C1)
+    def __init__(self):
+        self.pi = pigpio.pi()
+        if not self.pi.connected:
+            raise OSError("Error connecting to pigpio daemon")
+
+        iic_dev = 1 if self.pi.get_hardware_revision() > 1 else 0
+        self.iic = IIC(self.pi, iic_dev, iic_addr)
         self.thr_dr = ThreadedDataReader(iic=self.iic)
         whoami = self.iic.read_register(REG.WHO_AM_I)
         if whoami != device_name:
@@ -80,19 +82,25 @@ class Accel():
         # Route interrupt to pin 1
         self.iic.set_flag(REG.CTRL_REG5.INT_CFG_FIFO)
         # Setup GPIO callback
-        GPIO.setmode(GPIO.BOARD)
-        GPIO.setup(11, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-        GPIO.add_event_detect(11, GPIO.FALLING, callback=int1_callback)
+        gpio_num = 17
+        self.pi.set_mode(gpio_num, pigpio.INPUT)
+        self.pi.set_pull_up_down(gpio_num, pigpio.PUD_UP)
+        self.pi.callback(gpio_num, pigpio.FALLING_EDGE, Accel.int1_callback)
         self.thr_dr.start()
         # Activate the device
         self.iic.set_flag(REG.CTRL_REG1.ACTIVE)
 
-    def getQueue(self):
-        return DataQueue
+    @staticmethod
+    def int1_callback(GPIO, level, tick):
+        ThreadedDataReader.InterruptSF.release()
+
+    @staticmethod
+    def getQueue():
+        return Accel.DataQueue
 
     def cleanup(self):
         self.thr_dr.stop()
         self.thr_dr.join()
         self.iic.unset_flag(REG.CTRL_REG1.ACTIVE)
-        GPIO.cleanup()
         self.iic.close()
+        self.pi.stop()
