@@ -1,16 +1,66 @@
 #!/usr/bin/env python3
 # See 'LICENSE'  for copying
 
-import pigpio
+# Parts of this library
 from mma8451.register import register as REG
 from mma8451.iic import IIC
+
+# Python modules
 from threading import Thread, Semaphore
-from queue import Queue
+from multiprocessing import Queue, Process, Lock
+from queue import Empty
 import time
+from datetime import datetime
+
+# External libraries
+import h5py as h5
+import pigpio
+import numpy as np
 
 device_name = 0x1A
 iic_addr    = 0x1D
 
+class DataProcessor(Process):
+    DataQueue = Queue()
+    prec = 14
+    Fs = 800
+    maxn = 2**(prec-1)-1
+    signed_maxn = 2**prec
+
+    def reg2int(self, msb, lsb):
+        num = ((int(msb) << 8) | int(lsb)) >> 2
+        num -= self.signed_maxn if num > self.maxn else 0
+        return num
+
+    def prepare_data(self, bitvec):
+        data = np.zeros([len(bitvec)//6,3], dtype=np.int16)
+        for i in range(0, len(bitvec), 6):
+            data[i//6,0] = self.reg2int(bitvec[i],bitvec[i+1])
+            data[i//6,1] = self.reg2int(bitvec[i+2],bitvec[i+3])
+            data[i//6,2] = self.reg2int(bitvec[i+4],bitvec[i+5])
+        return data
+
+    def run(self):
+        data = None
+        dt = 60
+        n = self.Fs*dt
+        dtime = datetime.now()
+        while True:
+            try:
+                raw_data = DataProcessor.DataQueue.get(timeout=1)
+            except Empty:
+                break
+            if data is None:
+                data = self.prepare_data(raw_data)
+            else:
+                data = np.append(data, self.prepare_data(raw_data), axis=0)
+                if len(data) > n-1:
+                    dataset = dtime.strftime("%Y/%m/%d/%H/%M")
+                    with h5.File("data.h5", "a") as f:
+                        f.create_dataset(dataset, data=data)
+                    del data
+                    data = None
+                    dtime = datetime.now()
 
 class ThreadedDataReader(Thread):
     InterruptSF = Semaphore(0)
@@ -21,7 +71,6 @@ class ThreadedDataReader(Thread):
         super().__init__(**kwargs)
 
     def run(self):
-        global InterruptSF
         while not self.f_stop:
             if ThreadedDataReader.InterruptSF.acquire(timeout=1):
                 status = self.iic.read_register(REG.F_STATUS)
@@ -30,14 +79,13 @@ class ThreadedDataReader(Thread):
                     f_cnt = 32
                 else:
                     f_cnt = status & REG.F_STATUS.F_CNT
-                Accel.DataQueue.put(self.iic.block_read(REG.OUT_X_MSB, f_cnt*6))
+                DataProcessor.DataQueue.put(self.iic.block_read(REG.OUT_X_MSB, f_cnt*6))
                 self.iic.read_register(REG.F_STATUS)
 
     def stop(self):
         self.f_stop = True
 
 class Accel():
-    DataQueue = Queue()
 
     def __init__(self):
         self.pi = pigpio.pi()
@@ -47,6 +95,7 @@ class Accel():
         iic_dev = 1 if self.pi.get_hardware_revision() > 1 else 0
         self.iic = IIC(self.pi, iic_dev, iic_addr)
         self.thr_dr = ThreadedDataReader(iic=self.iic)
+        self.dpr = DataProcessor()
         whoami = self.iic.read_register(REG.WHO_AM_I)
         if whoami != device_name:
             raise NameError("Error! Device not recognized! (" + str(whoami) + ")")
@@ -84,16 +133,14 @@ class Accel():
         self.pi.set_pull_up_down(gpio_num, pigpio.PUD_UP)
         self.pi.callback(gpio_num, pigpio.FALLING_EDGE, Accel.int1_callback)
         self.thr_dr.start()
+        self.dpr.start()
         # Activate the device
         self.iic.set_flag(REG.CTRL_REG1.ACTIVE)
+        # Start data saver
 
     @staticmethod
     def int1_callback(GPIO, level, tick):
         ThreadedDataReader.InterruptSF.release()
-
-    @staticmethod
-    def getQueue():
-        return Accel.DataQueue
 
     def cleanup(self):
         self.thr_dr.stop()
@@ -101,3 +148,4 @@ class Accel():
         self.iic.unset_flag(REG.CTRL_REG1.ACTIVE)
         self.iic.close()
         self.pi.stop()
+        self.dpr.join()
