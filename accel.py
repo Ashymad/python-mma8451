@@ -61,28 +61,26 @@ class Accel():
         self.iic.unset_flag(REG.CTRL_REG1.ACTIVE)
         # No Fast-Read (14-bits), Fast-Read (8-Bits)
         self.iic.unset_flag(REG.CTRL_REG1.F_READ)
-        # Data Rate
+        # Data Rate (800 Hz is the default)
         self.iic.set_flag(REG.CTRL_REG1.DR_800Hz)
-        # Full Scale Range 2g, 4g or 8g
+        # Full Scale Range (2g is the default)
         self.iic.set_flag(REG.XYZ_DATA_CFG.FS_2g)
-        # Low Noise
+        # Low Noise mode
         self.iic.set_flag(REG.CTRL_REG1.LNOISE)
         # No Auto-Sleep
         self.iic.unset_flag(REG.CTRL_REG2.SLPE)
         # High Resolution
         self.iic.set_flag(REG.CTRL_REG2.SMODS_HR)
-        # P/L Detection Disabled
-        self.iic.unset_flag(REG.PL_CFG.PL_EN)
         # Enable FIFO fill mode
         self.iic.set_flag(REG.F_SETUP.F_MODE_Fill)
-        # Set watermark to 16 samples
+        # Set watermark to 15 samples
         self.iic.set_flag(REG.F_SETUP, 15)
         # Enable FIFO interrupt signal
         self.iic.set_flag(REG.CTRL_REG4.INT_EN_FIFO)
-        # Route interrupt to pin 1
+        # Route interrupt to pin 1 (2 is the dafault)
         self.iic.set_flag(REG.CTRL_REG5.INT_CFG_FIFO)
-        # Setup GPIO callback
-        gpio_num = 17
+        # Setup GPIO callback at GPIO 17
+        gpio_num = 17 # SoC numeration!
         self.pi.set_mode(gpio_num, pigpio.INPUT)
         self.pi.set_pull_up_down(gpio_num, pigpio.PUD_UP)
         self.pi.callback(gpio_num, pigpio.FALLING_EDGE, Accel.int1_callback)
