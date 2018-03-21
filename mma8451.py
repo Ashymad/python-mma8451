@@ -7,7 +7,7 @@ from mma8451.iic import IIC
 
 # Python modules
 from threading import Thread, Semaphore
-from multiprocessing import Queue, Process, Lock
+from multiprocessing import Queue, Process
 from queue import Empty
 import time
 from datetime import datetime
@@ -67,35 +67,30 @@ class ThreadedDataReader(Thread):
 
     def __init__(self, iic, **kwargs):
         self.iic = iic 
-        self.f_stop = False
         super().__init__(**kwargs)
 
-    def run(self):
-        while not self.f_stop:
-            if ThreadedDataReader.InterruptSF.acquire(timeout=1):
-                status = self.iic.read_register(REG.F_STATUS)
-                if self.iic.check_flag(status, REG.F_STATUS.F_OVF):
-                    print("Warning: FIFO buffer overflow!")
-                    f_cnt = 32
-                else:
-                    f_cnt = status & REG.F_STATUS.F_CNT
-                DataProcessor.DataQueue.put(self.iic.block_read(REG.OUT_X_MSB, f_cnt*6))
-                self.iic.read_register(REG.F_STATUS)
+    @staticmethod
+    def callback(GPIO, level, tick):
+        ThreadedDataReader.InterruptSF.release()
 
-    def stop(self):
-        self.f_stop = True
+    def run(self):
+        while ThreadedDataReader.InterruptSF.acquire(timeout=1):
+            status = self.iic.read_register(REG.F_STATUS)
+            f_cnt = status & REG.F_STATUS.F_CNT
+            if f_cnt == 32:
+                print("Warning: FIFO buffer overflow!")
+            DataProcessor.DataQueue.put(self.iic.block_read(REG.OUT_X_MSB, f_cnt*6))
+            self.iic.read_register(REG.F_STATUS)
 
 class Accel():
-
     def __init__(self):
         self.pi = pigpio.pi()
         if not self.pi.connected:
             raise OSError("Error connecting to pigpio daemon")
-
         iic_dev = 1 if self.pi.get_hardware_revision() > 1 else 0
         self.iic = IIC(self.pi, iic_dev, iic_addr)
         self.thr_dr = ThreadedDataReader(iic=self.iic)
-        self.dpr = DataProcessor()
+        self.dta_proc = DataProcessor()
         whoami = self.iic.read_register(REG.WHO_AM_I)
         if whoami != device_name:
             raise NameError("Error! Device not recognized! (" + str(whoami) + ")")
@@ -122,7 +117,7 @@ class Accel():
         # Enable FIFO fill mode
         self.iic.set_flag(REG.F_SETUP.F_MODE_Fill)
         # Set watermark to 15 samples
-        self.iic.set_flag(REG.F_SETUP, 15)
+        self.iic.set_flag(REG.F_SETUP, 20)
         # Enable FIFO interrupt signal
         self.iic.set_flag(REG.CTRL_REG4.INT_EN_FIFO)
         # Route interrupt to pin 1 (2 is the dafault)
@@ -131,21 +126,16 @@ class Accel():
         gpio_num = 17 # SoC numeration!
         self.pi.set_mode(gpio_num, pigpio.INPUT)
         self.pi.set_pull_up_down(gpio_num, pigpio.PUD_UP)
-        self.pi.callback(gpio_num, pigpio.FALLING_EDGE, Accel.int1_callback)
+        self.pi.callback(gpio_num, pigpio.FALLING_EDGE, ThreadedDataReader.callback)
         self.thr_dr.start()
-        self.dpr.start()
+        self.dta_proc.start()
         # Activate the device
         self.iic.set_flag(REG.CTRL_REG1.ACTIVE)
         # Start data saver
 
-    @staticmethod
-    def int1_callback(GPIO, level, tick):
-        ThreadedDataReader.InterruptSF.release()
-
     def cleanup(self):
-        self.thr_dr.stop()
-        self.thr_dr.join()
         self.iic.unset_flag(REG.CTRL_REG1.ACTIVE)
+        self.thr_dr.join()
         self.iic.close()
         self.pi.stop()
-        self.dpr.join()
+        self.dta_proc.join()
