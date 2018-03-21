@@ -1,8 +1,10 @@
 from mma8451.register.classes import Register, Flag
+from typing import Tuple
 
 class IIC():
     def __init__(self, pigpio_pi, iic_dev : int, iic_addr : int):
         self.pi = pigpio_pi
+        self.iic_addr = iic_addr
         self.iic = self.pi.i2c_open(iic_dev, iic_addr)
 
     def _write_register(self, register : int, data : int):
@@ -11,11 +13,12 @@ class IIC():
     def _read_register(self, register : int) -> int:
         return self.pi.i2c_read_byte_data(self.iic, register)
 
-    def _block_read(self, register : int, length : int) -> int:
-        data_size, data = self.pi.i2c_read_i2c_block_data(self.iic, register, length)
-        if data_size < 0:
-            raise OSError('Error ' + str(data_size) + ': unable to read i2c block data')
-        return data
+    def _block_read2(self, register :int, length : int) -> Tuple[int, bytes]:
+        return self.pi.i2c_zip(self.iic,
+            [4, self.iic_addr, 7, 1, register, 6, length, 0])
+
+    def _block_read(self, register : int, length : int) -> Tuple[int, bytes]:
+        return self.pi.i2c_read_i2c_block_data(self.iic, register, length)
 
     def write_register(self, register : Register, data : int):
         self._write_register(register._addr, data)
@@ -23,8 +26,14 @@ class IIC():
     def read_register(self, register : Register) -> int:
         return self._read_register(register._addr)
 
-    def block_read(self, offset : Register, length : int) -> int:
-        return self._block_read(offset._addr, length)
+    def block_read(self, offset : Register, length : int) -> bytes:
+        if length > 32:
+            data_size, data = self._block_read2(offset._addr, length)
+        else:
+            data_size, data = self._block_read(offset._addr, length)
+        if data_size < 0:
+            raise OSError('Error ' + str(data_size) + ': unable to read i2c block data')
+        return data
 
     def _set_flag(self, register : int, flag : int):
         self._write_register(register, self._read_register(register) | flag)

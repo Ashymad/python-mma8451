@@ -30,8 +30,7 @@ class ThreadedDataReader(Thread):
                     f_cnt = 32
                 else:
                     f_cnt = status & REG.F_STATUS.F_CNT
-                for i in range(0,f_cnt,5):
-                    Accel.DataQueue.put(self.iic.block_read(REG.OUT_X_MSB, 30))
+                Accel.DataQueue.put(self.iic.block_read(REG.OUT_X_MSB, f_cnt*6))
                 self.iic.read_register(REG.F_STATUS)
 
     def stop(self):
@@ -62,9 +61,9 @@ class Accel():
         # No Fast-Read (14-bits), Fast-Read (8-Bits)
         self.iic.unset_flag(REG.CTRL_REG1.F_READ)
         # Data Rate (800 Hz is the default)
-        self.iic.set_flag(REG.CTRL_REG1.DR_800Hz)
+        # self.iic.set_flag(REG.CTRL_REG1.DR_800Hz)
         # Full Scale Range (2g is the default)
-        self.iic.set_flag(REG.XYZ_DATA_CFG.FS_2g)
+        # self.iic.set_flag(REG.XYZ_DATA_CFG.FS_2g)
         # Low Noise mode
         self.iic.set_flag(REG.CTRL_REG1.LNOISE)
         # No Auto-Sleep
