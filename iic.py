@@ -1,4 +1,5 @@
 from mma8451.register.classes import Register, Flag
+from threading import Lock
 from typing import Tuple
 
 class IIC():
@@ -6,19 +7,31 @@ class IIC():
         self.pi = pigpio_pi
         self.iic_addr = iic_addr
         self.iic = self.pi.i2c_open(iic_dev, iic_addr)
+        self.lock = Lock()
 
     def _write_register(self, register : int, data : int):
+        self.lock.acquire()
         self.pi.i2c_write_byte_data(self.iic, register, data)
+        self.lock.release()
 
     def _read_register(self, register : int) -> int:
-        return self.pi.i2c_read_byte_data(self.iic, register)
+        self.lock.acquire()
+        data = self.pi.i2c_read_byte_data(self.iic, register)
+        self.lock.release()
+        return data
 
     def _block_read2(self, register :int, length : int) -> Tuple[int, bytes]:
-        return self.pi.i2c_zip(self.iic,
+        self.lock.acquire()
+        data = self.pi.i2c_zip(self.iic,
             [4, self.iic_addr, 7, 1, register, 6, length, 0])
+        self.lock.release()
+        return data
 
     def _block_read(self, register : int, length : int) -> Tuple[int, bytes]:
-        return self.pi.i2c_read_i2c_block_data(self.iic, register, length)
+        self.lock.acquire()
+        data = self.pi.i2c_read_i2c_block_data(self.iic, register, length)
+        self.lock.release()
+        return data
 
     def write_register(self, register : Register, data : int):
         self._write_register(register._addr, data)
