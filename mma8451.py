@@ -116,6 +116,7 @@ class Accel():
         self.iic.unset_flag(REG.CTRL_REG2.SLPE)
         # High Resolution
         self.iic.set_flag(REG.CTRL_REG2.MODS_HR)
+        self.iic.set_flag(REG.CTRL_REG2.SMODS_HR)
         # Enable FIFO fill mode
         self.iic.set_flag(REG.F_SETUP.F_MODE_Fill)
         # Set watermark to 15 samples
@@ -136,8 +137,8 @@ class Accel():
         self.dta_proc.start()
 
     def cleanup(self):
-        self.thr_dr.stop()
         if self.thr_dr.is_alive():
+            self.thr_dr.stop()
             self.thr_dr.join()
         if self.pi.connected:
             self.iic.close()
