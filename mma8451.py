@@ -115,7 +115,7 @@ class Accel():
         # No Auto-Sleep
         self.iic.unset_flag(REG.CTRL_REG2.SLPE)
         # High Resolution
-        self.iic.set_flag(REG.CTRL_REG2.SMODS_HR)
+        self.iic.set_flag(REG.CTRL_REG2.MODS_HR)
         # Enable FIFO fill mode
         self.iic.set_flag(REG.F_SETUP.F_MODE_Fill)
         # Set watermark to 15 samples
