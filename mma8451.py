@@ -42,9 +42,8 @@ class DataProcessor(Process):
 
     def run(self):
         data = None
-        dt = 60
+        dt = 300
         n = self.Fs*dt
-        dtime = datetime.now()
         while True:
             try:
                 raw_data = DataProcessor.DataQueue.get(timeout=1)
@@ -55,17 +54,17 @@ class DataProcessor(Process):
             else:
                 data = np.append(data, self.prepare_data(raw_data), axis=0)
                 if len(data) > n-1:
-                    dataset = dtime.strftime("%Y/%m/%d/%H/%M")
+                    dataset = datetime.now().strftime("%Y/%m/%d/%H/%M")
                     with h5.File("data.h5", "a") as f:
                         f.create_dataset(dataset, data=data)
                     del data
                     data = None
-                    dtime = datetime.now()
 
 class ThreadedDataReader(Thread):
     InterruptSF = Semaphore(0)
 
     def __init__(self, iic, **kwargs):
+        self.f_run = True
         self.iic = iic 
         super().__init__(**kwargs)
 
@@ -73,8 +72,11 @@ class ThreadedDataReader(Thread):
     def callback(GPIO, level, tick):
         ThreadedDataReader.InterruptSF.release()
 
+    def stop(self):
+        self.f_run = False
+
     def run(self):
-        while ThreadedDataReader.InterruptSF.acquire(timeout=1):
+        while ThreadedDataReader.InterruptSF.acquire(timeout=1) and self.f_run:
             status = self.iic.read_register(REG.F_STATUS)
             f_cnt = status & REG.F_STATUS.F_CNT
             if f_cnt == 32:
@@ -127,15 +129,18 @@ class Accel():
         self.pi.set_mode(gpio_num, pigpio.INPUT)
         self.pi.set_pull_up_down(gpio_num, pigpio.PUD_UP)
         self.pi.callback(gpio_num, pigpio.FALLING_EDGE, ThreadedDataReader.callback)
-        self.thr_dr.start()
-        self.dta_proc.start()
         # Activate the device
         self.iic.set_flag(REG.CTRL_REG1.ACTIVE)
-        # Start data saver
+        # Start data loggers
+        self.thr_dr.start()
+        self.dta_proc.start()
 
     def cleanup(self):
-        self.iic.unset_flag(REG.CTRL_REG1.ACTIVE)
-        self.thr_dr.join()
-        self.iic.close()
-        self.pi.stop()
-        self.dta_proc.join()
+        self.thr_dr.stop()
+        if self.thr_dr.is_alive():
+            self.thr_dr.join()
+        if self.pi.connected:
+            self.iic.close()
+            self.pi.stop()
+        if self.dta_proc.is_alive():
+            self.dta_proc.join()
