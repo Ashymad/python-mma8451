@@ -1,7 +1,7 @@
 import numpy as np
 import h5py as h5
 
-def datamerge(h5g, *items):
+def datamerge(h5g, *items, merge=True):
     items = list(items)
     i = 0
     dsets = list()
@@ -15,6 +15,7 @@ def datamerge(h5g, *items):
             for key in it.keys():
                 items.append(items[i] + "/" + key)
         i += 1
+    if not merge: return dsets
     dta = np.zeros([size, 3])
     start = 0
     for dset in dsets:
@@ -23,7 +24,7 @@ def datamerge(h5g, *items):
         start += l
     return dta
 
-def dataread(f, *args):
+def dataread(f, *args, merge=True):
     if type(args[len(args)-1]) is not list:
         args = (*args,[0, 9999])
     g = f
@@ -36,4 +37,4 @@ def dataread(f, *args):
             break
         if int(k) >= lim[0]:
             gr.append(k)
-    return datamerge(g, *gr)
+    return datamerge(g, *gr, merge=merge)
