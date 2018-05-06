@@ -20,7 +20,7 @@ class IIC():
         self.lock.release()
         return data
 
-    def _block_read2(self, register :int, length : int) -> Tuple[int, bytes]:
+    def _block_read2(self, register : int, length : int) -> Tuple[int, bytes]:
         self.lock.acquire()
         data = self.pi.i2c_zip(self.iic,
             [4, self.iic_addr, 7, 1, register, 6, length, 0])

@@ -4,11 +4,13 @@
 # Parts of this library
 from mma8451.register import register as REG
 from mma8451.iic import IIC
+from mma8451.register.configuration import _conf
 
 # Python modules
 from threading import Thread, Semaphore
 from multiprocessing import Queue, Process
 from queue import Empty
+from functools import reduce
 import time
 from datetime import datetime
 
@@ -17,8 +19,6 @@ import h5py as h5
 import pigpio
 import numpy as np
 
-device_name = 0x1A
-iic_addr    = 0x1D
 
 class DataProcessor(Process):
     DataQueue = Queue()
@@ -33,11 +33,11 @@ class DataProcessor(Process):
         return num
 
     def prepare_data(self, bitvec):
-        data = np.zeros([len(bitvec)//6,3], dtype=np.int16)
+        data = np.zeros([len(bitvec)//6, 3], dtype=np.int16)
         for i in range(0, len(bitvec), 6):
-            data[i//6,0] = self.reg2int(bitvec[i],bitvec[i+1])
-            data[i//6,1] = self.reg2int(bitvec[i+2],bitvec[i+3])
-            data[i//6,2] = self.reg2int(bitvec[i+4],bitvec[i+5])
+            data[i//6, 0] = self.reg2int(bitvec[i], bitvec[i+1])
+            data[i//6, 1] = self.reg2int(bitvec[i+2], bitvec[i+3])
+            data[i//6, 2] = self.reg2int(bitvec[i+4], bitvec[i+5])
         return data
 
     def run(self):
@@ -60,12 +60,13 @@ class DataProcessor(Process):
                     del data
                     data = None
 
+
 class ThreadedDataReader(Thread):
     InterruptSF = Semaphore(0)
 
     def __init__(self, iic, **kwargs):
         self.f_run = True
-        self.iic = iic 
+        self.iic = iic
         super().__init__(**kwargs)
 
     @staticmethod
@@ -81,27 +82,47 @@ class ThreadedDataReader(Thread):
             f_cnt = status & REG.F_STATUS.F_CNT
             if f_cnt == 32:
                 print("Warning: FIFO buffer overflow!")
-            DataProcessor.DataQueue.put(self.iic.block_read(REG.OUT_X_MSB, f_cnt*6))
+            DataProcessor.DataQueue.put(
+                self.iic.block_read(REG.OUT_X_MSB, f_cnt*6))
             self.iic.read_register(REG.F_STATUS)
 
-class Accel():
-    def __init__(self):
+
+class Device():
+    def __init__(self, iic_addr=0x1D, device_name=0x1A):
+        self.iic_addr = iic_addr
+        self.device_name = device_name
+        self.conf = {}
+        for el in _conf.keys():
+            self.conf[el] = _conf[el]["default"]
+
+    def __enter__(self):
+        self.open()
+
+    def open(self):
         self.pi = pigpio.pi()
         if not self.pi.connected:
             raise OSError("Error connecting to pigpio daemon")
         iic_dev = 1 if self.pi.get_hardware_revision() > 1 else 0
-        self.iic = IIC(self.pi, iic_dev, iic_addr)
+        self.iic = IIC(self.pi, iic_dev, self.iic_addr)
         self.thr_dr = ThreadedDataReader(iic=self.iic)
         self.dta_proc = DataProcessor()
         whoami = self.iic.read_register(REG.WHO_AM_I)
-        if whoami != device_name:
-            raise NameError("Error! Device not recognized! (" + str(whoami) + ")")
+        if whoami != self.device_name:
+            raise NameError(
+                "Error! Device not recognized! (" + str(whoami) + ")")
 
-
-    def init_callback(self):
-        # Reset
+    def restart(self):
+        """Restart device. Sets all registers to default values."""
         self.iic.set_flag(REG.CTRL_REG2.RST)
         time.sleep(0.01)
+        for el in _conf.keys():
+            self.conf[el] = reduce(lambda a, b: a | b, _conf[el]["default"])
+
+    def configure(self, **kwargs):
+        for key in kwargs.keys():
+            self.iic.unset_flag(_conf[key]["flags"].values().reduce(
+
+    def init_callback(self):
         # Put the device in Standby
         self.iic.unset_flag(REG.CTRL_REG1.ACTIVE)
         # No Fast-Read (14-bits), Fast-Read (8-Bits)
@@ -126,17 +147,21 @@ class Accel():
         # Route interrupt to pin 1 (2 is the dafault)
         self.iic.set_flag(REG.CTRL_REG5.INT_CFG_FIFO)
         # Setup GPIO callback at GPIO 17
-        gpio_num = 17 # SoC numeration!
+        gpio_num = 17  # SoC numeration!
         self.pi.set_mode(gpio_num, pigpio.INPUT)
         self.pi.set_pull_up_down(gpio_num, pigpio.PUD_UP)
-        self.pi.callback(gpio_num, pigpio.FALLING_EDGE, ThreadedDataReader.callback)
+        self.pi.callback(gpio_num, pigpio.FALLING_EDGE,
+                         ThreadedDataReader.callback)
         # Activate the device
         self.iic.set_flag(REG.CTRL_REG1.ACTIVE)
         # Start data loggers
         self.thr_dr.start()
         self.dta_proc.start()
 
-    def cleanup(self):
+    def __exit__(self):
+        self.close()
+
+    def close(self):
         if self.thr_dr.is_alive():
             self.thr_dr.stop()
             self.thr_dr.join()
