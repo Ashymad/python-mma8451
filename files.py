@@ -15,18 +15,20 @@ def datamerge(h5g, *items, merge=True):
             for key in it.keys():
                 items.append(items[i] + "/" + key)
         i += 1
-    if not merge: return dsets
+    if not merge:
+        return dsets
     dta = np.zeros([size, 3])
     start = 0
     for dset in dsets:
         l = len(dset)
-        dta[start:start+l,:] = dset
+        dta[start:start+l, :] = dset
         start += l
     return dta
 
+
 def dataread(f, *args, merge=True):
     if type(args[len(args)-1]) is not list:
-        args = (*args,[0, 9999])
+        args = (*args, [0, 9999])
     g = f
     for arg in range(0, len(args)-1):
         g = g[args[arg]]
